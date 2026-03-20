@@ -1,0 +1,11 @@
+name: herald
+id: herald
+type: library
+language: go
+version: 0.1.0
+capabilities:
+  - nexus-http-client
+  - typed-api
+  - retry-backoff
+depends_on:
+  - accord
