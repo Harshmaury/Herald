@@ -124,6 +124,10 @@ func (c *Client) Forge() *ForgeClient { return &ForgeClient{c} }
 // The Client must be pointed at the Guardian address (default :8085).
 func (c *Client) Guardian() *GuardianClient { return &GuardianClient{c} }
 
+// Gate returns the Gate identity API client.
+// The Client must be pointed at the Gate address (default :8088).
+func (c *Client) Gate() *GateClient { return &GateClient{c} }
+
 // Navigator returns the Navigator topology API client.
 // The Client must be pointed at the Navigator address (default :8084).
 func (c *Client) Navigator() *NavigatorClient { return &NavigatorClient{c} }
@@ -218,6 +222,8 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ou
 			code = accord.ErrUnauthorized
 		case http.StatusBadRequest:
 			code = accord.ErrInvalidInput
+		case http.StatusForbidden:
+			code = accord.ErrForbidden
 		}
 		return &accord.Error{Code: code, Message: env.Error}
 	}
