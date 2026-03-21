@@ -1,9 +1,25 @@
 // Package client provides a typed HTTP client for the Nexus API.
 // Import herald — never call engxd directly from application code.
 //
-// Usage:
-//   c := client.New("http://127.0.0.1:8080")
+// ADR-039: client now covers Atlas, Forge, Guardian, and Nexus /metrics
+// in addition to the original Nexus service/project/agent/event endpoints.
+// Use New() for Nexus. Use NewForService() for Atlas, Forge, Guardian.
+//
+// Usage — Nexus:
+//   c := client.New("http://127.0.0.1:8080", client.WithToken(token))
 //   svcs, err := c.Services().List(ctx)
+//
+// Usage — Atlas:
+//   c := client.NewForService("http://127.0.0.1:8081", token)
+//   projs, err := c.Atlas().Projects(ctx)
+//
+// Usage — Forge:
+//   c := client.NewForService("http://127.0.0.1:8082", token)
+//   history, err := c.Forge().History(ctx, 100)
+//
+// Usage — Guardian:
+//   c := client.NewForService("http://127.0.0.1:8085", token)
+//   report, err := c.Guardian().Findings(ctx)
 package client
 
 import (
@@ -22,7 +38,8 @@ const (
 	defaultMaxRetries = 3
 )
 
-// Client is the Nexus API HTTP client. Safe for concurrent use.
+// Client is the typed HTTP client. Safe for concurrent use.
+// One Client instance per upstream service address.
 type Client struct {
 	baseURL    string
 	token      string
@@ -57,22 +74,47 @@ func New(baseURL string, opts ...Option) *Client {
 	return c
 }
 
-// Services returns the services API client.
+// NewForService creates a Client for a non-Nexus upstream service.
+// Equivalent to New(baseURL, WithToken(token)) — named for clarity at call sites.
+func NewForService(baseURL, token string) *Client {
+	return New(baseURL, WithToken(token))
+}
+
+// ── NEXUS ENDPOINT ACCESSORS ──────────────────────────────────────────────────
+
+// Services returns the Nexus services API client.
 func (c *Client) Services() *ServicesClient { return &ServicesClient{c} }
 
-// Projects returns the projects API client.
+// Projects returns the Nexus projects API client.
 func (c *Client) Projects() *ProjectsClient { return &ProjectsClient{c} }
 
-// Agents returns the agents API client.
+// Agents returns the Nexus agents API client.
 func (c *Client) Agents() *AgentsClient { return &AgentsClient{c} }
 
-// Events returns the events API client.
+// Events returns the Nexus events API client.
 func (c *Client) Events() *EventsClient { return &EventsClient{c} }
 
-// Health returns the health API client.
+// Health returns the health API client (works for any service).
 func (c *Client) Health() *HealthClient { return &HealthClient{c} }
 
-// WaitReady polls GET /health until engxd responds or ctx is cancelled.
+// NexusMetrics returns the Nexus /metrics API client.
+func (c *Client) NexusMetrics() *NexusMetricsClient { return &NexusMetricsClient{c} }
+
+// ── UPSTREAM SERVICE ACCESSORS ────────────────────────────────────────────────
+
+// Atlas returns the Atlas workspace API client.
+// The Client must be pointed at the Atlas address (default :8081).
+func (c *Client) Atlas() *AtlasClient { return &AtlasClient{c} }
+
+// Forge returns the Forge history API client.
+// The Client must be pointed at the Forge address (default :8082).
+func (c *Client) Forge() *ForgeClient { return &ForgeClient{c} }
+
+// Guardian returns the Guardian findings API client.
+// The Client must be pointed at the Guardian address (default :8085).
+func (c *Client) Guardian() *GuardianClient { return &GuardianClient{c} }
+
+// WaitReady polls GET /health until the service responds or ctx is cancelled.
 func WaitReady(ctx context.Context, baseURL string, pollInterval time.Duration) error {
 	c := New(baseURL, WithRetries(1), WithTimeout(2*time.Second))
 	for {
@@ -82,7 +124,7 @@ func WaitReady(ctx context.Context, baseURL string, pollInterval time.Duration) 
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("engxd not ready at %s: %w", baseURL, ctx.Err())
+			return fmt.Errorf("service not ready at %s: %w", baseURL, ctx.Err())
 		case <-time.After(pollInterval):
 		}
 	}
@@ -137,7 +179,7 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ou
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return &accord.Error{Code: accord.ErrDaemonUnavailable,
-			Message: fmt.Sprintf("cannot reach engxd at %s: %v", c.baseURL, err)}
+			Message: fmt.Sprintf("cannot reach service at %s: %v", c.baseURL, err)}
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
