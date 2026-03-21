@@ -1,9 +1,14 @@
+// @herald-project: Herald
+// @herald-path: client/client.go
 // Package client provides a typed HTTP client for the Nexus API.
 // Import herald — never call engxd directly from application code.
 //
-// ADR-039: client now covers Atlas, Forge, Guardian, and Nexus /metrics
+// ADR-039: client now covers Atlas, Forge, Guardian, Navigator, and Nexus /metrics
 // in addition to the original Nexus service/project/agent/event endpoints.
-// Use New() for Nexus. Use NewForService() for Atlas, Forge, Guardian.
+// Use New() for Nexus. Use NewForService() for Atlas, Forge, Guardian, Navigator.
+//
+// F-7 fix: replaced hardcoded "X-Service-Token" literal with canon.ServiceTokenHeader.
+// Canon is now a direct dependency of Herald (go.mod updated).
 //
 // Usage — Nexus:
 //   c := client.New("http://127.0.0.1:8080", client.WithToken(token))
@@ -20,6 +25,10 @@
 // Usage — Guardian:
 //   c := client.NewForService("http://127.0.0.1:8085", token)
 //   report, err := c.Guardian().Findings(ctx)
+//
+// Usage — Navigator:
+//   c := client.NewForService("http://127.0.0.1:8084", token)
+//   graph, err := c.Navigator().Graph(ctx)
 package client
 
 import (
@@ -31,6 +40,7 @@ import (
 	"time"
 
 	accord "github.com/Harshmaury/Accord/api"
+	canon "github.com/Harshmaury/Canon/identity"
 )
 
 const (
@@ -114,6 +124,10 @@ func (c *Client) Forge() *ForgeClient { return &ForgeClient{c} }
 // The Client must be pointed at the Guardian address (default :8085).
 func (c *Client) Guardian() *GuardianClient { return &GuardianClient{c} }
 
+// Navigator returns the Navigator topology API client.
+// The Client must be pointed at the Navigator address (default :8084).
+func (c *Client) Navigator() *NavigatorClient { return &NavigatorClient{c} }
+
 // WaitReady polls GET /health until the service responds or ctx is cancelled.
 func WaitReady(ctx context.Context, baseURL string, pollInterval time.Duration) error {
 	c := New(baseURL, WithRetries(1), WithTimeout(2*time.Second))
@@ -174,7 +188,8 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ou
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.token != "" {
-		req.Header.Set("X-Service-Token", c.token)
+		// F-7: use canon constant — never hardcode "X-Service-Token"
+		req.Header.Set(canon.ServiceTokenHeader, c.token)
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
