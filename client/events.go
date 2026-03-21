@@ -30,3 +30,12 @@ func (e *EventsClient) Since(ctx context.Context, sinceID int64, limit int) ([]a
 	}
 	return out, nil
 }
+
+// ByTrace returns all events for a specific trace ID.
+func (e *EventsClient) ByTrace(ctx context.Context, traceID string) ([]accord.EventDTO, error) {
+	var out []accord.EventDTO
+	if err := e.c.get(ctx, "/events?trace="+traceID, &out); err != nil {
+		return nil, fmt.Errorf("events.bytrace: %w", err)
+	}
+	return out, nil
+}
