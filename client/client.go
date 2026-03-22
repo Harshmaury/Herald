@@ -148,6 +148,27 @@ func WaitReady(ctx context.Context, baseURL string, pollInterval time.Duration) 
 	}
 }
 
+
+// ── TRACE CONTEXT ─────────────────────────────────────────────────────────────
+
+type contextKey string
+
+const traceIDKey contextKey = "herald-trace-id"
+
+// WithTraceID returns a context carrying traceID for outbound Herald requests.
+// Services should call this before any Herald client call to propagate traces.
+//   ctx = client.WithTraceID(ctx, canon.TraceIDFromRequest(r))
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	return context.WithValue(ctx, traceIDKey, traceID)
+}
+
+// TraceIDFromContext retrieves the trace ID stored by WithTraceID.
+// Returns empty string if not set.
+func TraceIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(traceIDKey).(string)
+	return v
+}
+
 // ── HTTP PRIMITIVES ──────────────────────────────────────────────────────────
 
 func (c *Client) get(ctx context.Context, path string, out any) error {
@@ -194,6 +215,10 @@ func (c *Client) do(ctx context.Context, method, path string, body io.Reader, ou
 	if c.token != "" {
 		// F-7: use canon constant — never hardcode "X-Service-Token"
 		req.Header.Set(canon.ServiceTokenHeader, c.token)
+	}
+	// ADR-045: propagate X-Trace-ID outbound if present in context.
+	if traceID := TraceIDFromContext(ctx); traceID != "" {
+		req.Header.Set(canon.TraceIDHeader, traceID)
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
